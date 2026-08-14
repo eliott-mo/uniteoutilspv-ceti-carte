@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.streamlit/secrets.toml
+.tile_cache/
+Inputs divers/
+Archive/
+test_*.png
+test_*.pdf

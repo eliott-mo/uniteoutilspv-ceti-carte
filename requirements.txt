@@ -1,0 +1,12 @@
+streamlit>=1.57.0
+geopandas
+shapely
+fiona
+pyproj
+rasterio
+contextily
+matplotlib
+numpy
+pandas
+Pillow
+starlette==1.0.0
