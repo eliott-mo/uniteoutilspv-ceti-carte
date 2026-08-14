@@ -1,10 +1,27 @@
+# Python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+*.egg-info/
+
+# Streamlit
 .streamlit/secrets.toml
+
+# Cache tuiles IGN (se reremplit tout seul)
 .tile_cache/
+
+# Donnees projet (sites reels) — jamais versionnees
 Inputs divers/
 Archive/
+
+# Scripts et sorties de dev/test — hors deploiement
+check_regression.py
+test_*.py
 test_*.png
 test_*.pdf
+UNITe_CETI_PV_*.png
+UNITe_CETI_PV_*.pdf
+
+# Outillage local
+.claude/
