@@ -523,9 +523,29 @@ def generer_carte(shp_path, nom_projet, recul_capteurs=10, urbanisme="",
     # ZH : on decoupe a l emprise du terrain d implantation
     # (la couche ZH peut etre tres etendue)
     if gdf_zh is not None:
-        zh_raw  = unary_union(gdf_zh.geometry)
-        zh_geom = zh_raw.intersection(terrain)
-        if zh_geom.is_empty:
+        # Certains exports SIG livrent les ZH comme des anneaux FERMES stockes en
+        # LineString et non en Polygon. unary_union donnait alors un
+        # MultiLineString : l intersection n etait pas vide (donc la legende
+        # s affichait) mais draw_hatch ne trace que des Polygon, si bien qu aucune
+        # zone n apparaissait sur la carte. On polygonise donc les anneaux fermes.
+        _zh_parts = [g for g in gdf_zh.geometry
+                     if g is not None and not g.is_empty
+                     and g.geom_type in ("Polygon", "MultiPolygon")]
+        _zh_lines = [g for g in gdf_zh.geometry
+                     if g is not None and not g.is_empty
+                     and g.geom_type in ("LineString", "MultiLineString")]
+        if _zh_lines:
+            _zh_rings = [p for p in _polygonize(unary_union(_zh_lines)) if p.area > 0]
+            if _zh_rings:
+                _zh_parts.extend(_zh_rings)
+                print("ZH : {} anneau(x) ferme(s) converti(s) en polygone(s)".format(
+                    len(_zh_rings)))
+            elif not _zh_parts:
+                print("Avertissement : ZH fournies en lignes ouvertes, "
+                      "non polygonisables — couche ignoree")
+
+        zh_geom = unary_union(_zh_parts).intersection(terrain) if _zh_parts else None
+        if zh_geom is None or zh_geom.is_empty:
             print("Avertissement : la couche ZH n intersecte pas le terrain — ignoree")
             zh_geom = None
         else:
