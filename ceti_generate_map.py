@@ -537,15 +537,97 @@ def draw_hatch(ax, geom, ec="#0077BB", fc="#AEE4FF", hatch="////",
 
 
 # ════════════════════════════════════════════════════════════════
+# CHOIX DU FORMAT NORMALISE ET DE L'ECHELLE
+# ════════════════════════════════════════════════════════════════
+
+# Formats ISO A (pouces) : (nom, petit cote, grand cote). 1 pouce = 25,4 mm.
+_FORMATS_ISO = [
+    ("A4",  8.268, 11.693),
+    ("A3", 11.693, 16.535),
+    ("A2", 16.535, 23.386),
+    ("A1", 23.386, 33.110),
+    ("A0", 33.110, 46.811),
+]
+# Marges mini (pouces) : gauche (graduations + libelle Y), droite, haut (titre +
+# logo), bas (libelle X + phrase explicative). Le bas est large pour la phrase.
+_MARGES_IN = (0.90, 0.15, 0.95, 1.20)
+
+
+def _choisir_planche(geo_w, geo_h, echelle):
+    """
+    Choisit le plus petit format ISO qui contient la carte au 1/5000, puis, si
+    echelle == "auto", l'echelle ronde la plus fine (<= 1/5000) qui remplit ce
+    format. La contrainte CRE impose une echelle au moins aussi detaillee que le
+    1/5000 (denominateur <= 5000).
+
+    Retourne un dict : echelle (int), format (str), sheet_w_in, sheet_h_in
+    (dimensions de la planche orientee pour contenir la carte), les 4 marges, et
+    depasse (True si l'emprise deborde meme l'A0).
+    """
+    ML, MR, MT, MB = _MARGES_IN
+
+    def _fig(S):
+        aw = geo_w / S / 0.0254
+        ah = geo_h / S / 0.0254
+        return aw + ML + MR, ah + MT + MB
+
+    def _tient(fw, fh, sw, sh):
+        e = 1e-6
+        return (fw <= sw + e and fh <= sh + e) or (fw <= sh + e and fh <= sw + e)
+
+    auto = (echelle == "auto" or echelle is None)
+    S0   = 5000 if auto else int(echelle)
+
+    # Plus petit format contenant la carte a l'echelle de reference S0.
+    choix, depasse = None, False
+    fw0, fh0 = _fig(S0)
+    for nm, sw, sh in _FORMATS_ISO:
+        if _tient(fw0, fh0, sw, sh):
+            choix = (nm, sw, sh)
+            break
+    if choix is None:                       # deborde meme l'A0
+        choix, depasse = _FORMATS_ISO[-1], True
+    nm, sw, sh = choix
+
+    # Echelle finale : en auto, la plus fine (denominateur le plus petit) qui
+    # remplit encore ce format ; sinon l'echelle demandee.
+    S = S0
+    if auto:
+        for cand in (2000, 2500, 4000, 5000):
+            if cand > S0:
+                continue
+            fw, fh = _fig(cand)
+            if _tient(fw, fh, sw, sh):
+                S = cand
+                break
+
+    # Oriente la planche pour contenir la carte (portrait ou paysage).
+    fw, fh = _fig(S)
+    if fw <= sw + 1e-6 and fh <= sh + 1e-6:
+        sheet = (sw, sh)
+    else:
+        sheet = (sh, sw)
+
+    return {"echelle": S, "format": nm,
+            "sheet_w_in": sheet[0], "sheet_h_in": sheet[1],
+            "ML": ML, "MR": MR, "MT": MT, "MB": MB, "depasse": depasse}
+
+
+def _fmt_cm(x):
+    """10.0 -> '10' ; 12.5 -> '12,5' (format francais, sans zero inutile)."""
+    return ("{:.1f}".format(x).rstrip("0").rstrip(".")).replace(".", ",")
+
+
+# ════════════════════════════════════════════════════════════════
 # FONCTION PRINCIPALE
 # ════════════════════════════════════════════════════════════════
 
 def generer_carte(shp_path, nom_projet, recul_capteurs=10, urbanisme="",
-                  echelle=5000, fond_aerien=True, dpi=150, buffer_carte=800,
+                  echelle="auto", fond_aerien=True, dpi=150, buffer_carte=800,
                   tick_deg=0.005, zh_path=None, elements_path=None,
                   kml_panneaux=None, kml_pistes=None,
                   urba_terrain=False, urba_buffer=True,
-                  format="png", debug=False):
+                  format="png", debug=False, return_meta=False):
     """
     Génère la carte de situation CETI et retourne les bytes PNG ou PDF.
 
@@ -738,30 +820,42 @@ def generer_carte(shp_path, nom_projet, recul_capteurs=10, urbanisme="",
         zh_geom = None
     _ts("Intersection ZH terminee")
 
-    # ── Taille figure à l'échelle exacte ──────────────────────────────────────
-    MARGIN_L, MARGIN_R     = 0.90, 0.15
-    MARGIN_TOP, MARGIN_BOT = 0.95, 0.65
+    # ── Format normalise + echelle : la planche est un A4/A3/A2/A1/A0 ─────
+    _pl = _choisir_planche(geo_w, geo_h, echelle)
+    echelle    = _pl["echelle"]
+    format_nom = _pl["format"]
+    fig_w_in   = _pl["sheet_w_in"]
+    fig_h_in   = _pl["sheet_h_in"]
+    MARGIN_L, MARGIN_R, MARGIN_TOP, MARGIN_BOT = (
+        _pl["ML"], _pl["MR"], _pl["MT"], _pl["MB"])
 
     ax_w_in  = geo_w / echelle / 0.0254
     ax_h_in  = geo_h / echelle / 0.0254
-    fig_w_in = ax_w_in + MARGIN_L + MARGIN_R
-    fig_h_in = ax_h_in + MARGIN_TOP + MARGIN_BOT
+    # Surplus de la planche vs carte+marges mini : reparti pour centrer l'axe
+    # (le titre reste en haut de l'axe, la phrase explicative tout en bas).
+    _surplus_w = max(fig_w_in - (ax_w_in + MARGIN_L + MARGIN_R), 0.0)
+    _surplus_h = max(fig_h_in - (ax_h_in + MARGIN_TOP + MARGIN_BOT), 0.0)
+    _ax_left   = MARGIN_L   + _surplus_w / 2
+    _ax_bottom = MARGIN_BOT + _surplus_h / 2
+
     echelle_lbl = "1 / {:,}".format(echelle).replace(",", " ")
+    bar_cm      = 50000.0 / echelle   # longueur papier de la barre "500 m"
 
-    print("Axe : {:.1f}\u00d7{:.1f} cm | Figure : {}\u00d7{} px".format(
-        ax_w_in * 2.54, ax_h_in * 2.54,
-        int(fig_w_in * dpi), int(fig_h_in * dpi)))
+    if _pl["depasse"]:
+        print("ATTENTION : emprise > A0 au 1/5000 — planche A0, verifier/decouper a la main")
+    print("Format {} ({:.1f}x{:.1f} cm) | echelle {} | barre 500 m = {} cm".format(
+        format_nom, fig_w_in * 2.54, fig_h_in * 2.54, echelle_lbl, _fmt_cm(bar_cm)))
 
-    # ── Points extrémaux WGS84 DMS ────────────────────────────────────────────
+    # ── Points extremaux WGS84 DMS ─────────────────────────
     tr       = Transformer.from_crs("EPSG:2154", "EPSG:4326", always_xy=True)
     extremal = calcul_extremaux(terrain, tr, echelle)
 
     _ts("Figure matplotlib creee (avant fond IGN)")
-    # ── Figure ────────────────────────────────────────────────────────────────
+    # ── Figure ───────────────────────────────────
     fig = plt.figure(figsize=(fig_w_in, fig_h_in), dpi=dpi)
     ax  = fig.add_axes([
-        MARGIN_L   / fig_w_in,
-        MARGIN_BOT / fig_h_in,
+        _ax_left   / fig_w_in,
+        _ax_bottom / fig_h_in,
         ax_w_in    / fig_w_in,
         ax_h_in    / fig_h_in,
     ])
@@ -1067,7 +1161,8 @@ def generer_carte(shp_path, nom_projet, recul_capteurs=10, urbanisme="",
     sb_y = y0 + geo_h * 0.035
     ax.annotate("", xy=(sb_x + 500, sb_y), xytext=(sb_x, sb_y),
                 arrowprops=dict(arrowstyle="|-|, widthA=0.5, widthB=0.5", color=c_txt, lw=2))
-    ax.text(sb_x + 250, sb_y + geo_h * 0.013, "500 m", ha="center",
+    ax.text(sb_x + 250, sb_y + geo_h * 0.013,
+            "500 m  =  {} cm".format(_fmt_cm(bar_cm)), ha="center",
             fontsize=9, fontweight="bold", color=c_txt,
             bbox=dict(fc="#00000066" if fond_ok else "white", alpha=0.7, ec="none"))
 
@@ -1206,15 +1301,31 @@ def generer_carte(shp_path, nom_projet, recul_capteurs=10, urbanisme="",
         _logo = _logo.resize((_target_w, _target_h), _PILImg.LANCZOS)
         _logo_arr = np.array(_logo)
         # yo est TOUJOURS compte depuis le BAS du canvas, meme avec origin="upper" :
-        # origin ne controle que le sens de lecture du tableau de pixels.
-        # On vise le centre vertical de la bande de marge haute (celle du titre) :
-        # on part du haut de l'axe cartographique, puis on centre le logo dedans.
-        _axes_top_px = int((MARGIN_BOT + ax_h_in) * dpi)
-        _yo = _axes_top_px + (int(MARGIN_TOP * dpi) - _target_h) // 2
-        _xo = int(fig_w_in * dpi) - _target_w - int(0.10 * dpi)
+        # origin ne controle que le sens de lecture du tableau de pixels. On
+        # centre le logo dans la bande situee AU-DESSUS de l'axe cartographique
+        # (l'axe est desormais centre sur la planche, cf. _ax_bottom).
+        _axes_top_px = int((_ax_bottom + ax_h_in) * dpi)
+        _band_px     = int(fig_h_in * dpi) - _axes_top_px
+        _yo = _axes_top_px + max((_band_px - _target_h) // 2, 0)
+        # Bord droit du logo aligne sur le bord droit de la carte (meme marge).
+        _xo = int((_ax_left + ax_w_in) * dpi) - _target_w
         fig.figimage(_logo_arr, xo=_xo, yo=_yo, origin="upper")
 
     ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
+
+    # ── Phrase explicative de l'echelle et du format ─────────────────────────
+    # Placee juste SOUS la carte (sous le libelle d'axe X) plutot qu'en pied de
+    # planche : sur les grands formats, le bas de page passe inapercu.
+    _phrase = (
+        "Échelle {lbl} : 500 m au sol = 500 ÷ {s} = {cm} cm sur le papier "
+        "(voir barre d'échelle).\n"
+        "Format {fmt} — plus petit format normalisé affichant le projet et ses "
+        "abords (périmètre de 600 m) au 1/5000 minimum requis. "
+        "Planche à imprimer à 100 % (taille réelle, sans ajustement)."
+    ).format(lbl=echelle_lbl, s=echelle, cm=_fmt_cm(bar_cm), fmt=format_nom)
+    _cx_map = (_ax_left + ax_w_in / 2) / fig_w_in
+    fig.text(_cx_map, (_ax_bottom - 0.58) / fig_h_in, _phrase,
+             ha="center", va="top", fontsize=8, color="#555555", linespacing=1.5)
     _ts("Annotations/legende/titre terminees")
 
     # ── Export bytes ──────────────────────────────────────────────────────────
@@ -1251,7 +1362,14 @@ def generer_carte(shp_path, nom_projet, recul_capteurs=10, urbanisme="",
     for pt in extremal:
         print("  {}  {}   {}".format(pt["label"], pt["lat"], pt["lon"]))
 
-    return buf.read()
+    _bytes = buf.read()
+    if return_meta:
+        return _bytes, {
+            "echelle": echelle, "format": format_nom,
+            "sheet_w_cm": fig_w_in * 2.54, "sheet_h_cm": fig_h_in * 2.54,
+            "bar_cm": bar_cm, "depasse": _pl["depasse"],
+        }
+    return _bytes
 
 
 # ════════════════════════════════════════════════════════════════

@@ -246,21 +246,27 @@ with col_result:
 
                 # ── Génération unique en PNG (le PDF en est dérivé) ────────────
                 with st.spinner("Génération de la carte en cours… (chargement fond aérien si activé)"):
-                    png_bytes = generer_carte(
+                    png_bytes, meta = generer_carte(
                         shp_path       = shp,
                         nom_projet     = nom_projet.strip(),
                         recul_capteurs = recul,
                         urbanisme      = urbanisme.strip(),
-                        echelle        = 5000,
+                        echelle        = "auto",
                         fond_aerien    = fond_aerien,
                         dpi            = dpi_gen,
                         zh_path        = zh_path,
                         kml_panneaux   = panneaux_path,
                         kml_pistes     = pistes_paths,
                         format         = "png",
+                        return_meta    = True,
                     )
 
-            st.success("✅ Carte générée avec succès !")
+            _echelle_txt = "1/{}".format(meta["echelle"])
+            st.success("✅ Carte générée — format {} · échelle {} · planche {:.0f}×{:.0f} cm".format(
+                meta["format"], _echelle_txt, meta["sheet_w_cm"], meta["sheet_h_cm"]))
+            if meta.get("depasse"):
+                st.warning("⚠️ Emprise supérieure à l'A0 au 1/5000 : planche A0 générée, "
+                           "un découpage manuel peut être nécessaire.")
 
             # Une seule décode PIL, réutilisée pour l'aperçu puis pour le PDF
             _img = Image.open(io.BytesIO(png_bytes))
@@ -305,9 +311,11 @@ with col_result:
             _img.close()
 
             st.download_button(
-                label            = "⬇️ Télécharger la carte ({})".format(format_export),
+                label            = "⬇️ Télécharger la carte ({} · {} · {})".format(
+                    format_export, meta["format"], _echelle_txt),
                 data             = carte_bytes,
-                file_name        = "UNITe_CETI_PV_{}.{}".format(_slug, fmt_lower),
+                file_name        = "UNITe_CETI_PV_{}_{}_1-{}.{}".format(
+                    _slug, meta["format"], meta["echelle"], fmt_lower),
                 mime             = mime_type,
                 use_container_width=True,
             )
