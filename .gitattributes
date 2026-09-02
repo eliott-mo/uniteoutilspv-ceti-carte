@@ -1,0 +1,10 @@
+# Fins de ligne LF, dans le dépôt comme à la sortie de checkout.
+# Un fichier de configuration en CRLF est ignoré silencieusement par
+# Streamlit Community Cloud (apt reçoit un  dans le nom du paquet).
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.zip binary
