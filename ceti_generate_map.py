@@ -480,11 +480,9 @@ def charger_geodata(path):
         gdf = gpd.read_file(shp)
 
     elif ext == ".kml":
-        import fiona
-        # Activer le driver KML (désactivé par défaut dans fiona)
-        fiona.drvsupport.supported_drivers["KML"]  = "rw"
-        fiona.drvsupport.supported_drivers["LIBKML"] = "rw"
-        gdf = gpd.read_file(path, driver="KML")
+        # Moteur pyogrio (defaut de geopandas 1.x) : drivers KML/LIBKML actifs
+        # nativement en lecture, aucune activation prealable necessaire.
+        gdf = gpd.read_file(path)
 
     elif ext in (".geojson", ".json"):
         gdf = gpd.read_file(path)

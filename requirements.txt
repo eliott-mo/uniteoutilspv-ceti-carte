@@ -1,12 +1,133 @@
-streamlit>=1.57.0
-geopandas
-shapely
-fiona
-pyproj
-rasterio
-contextily
-matplotlib
-numpy
-pandas
-Pillow
-starlette==1.0.0
+# =============================================================================
+# Dependances EPINGLEES — ne pas editer a la main (voir procedure en bas).
+#
+# Jeu COMPLET (dependances directes + transitives) resolu pour Python 3.14 sur
+# roues manylinux x86_64 : la cible reelle de Streamlit Community Cloud, qui
+# reinstalle tout a chaque push.
+#
+# ATTENTION : le Cloud NE LIT PAS le fichier .python-version (convention pyenv,
+# utile en local seulement). La version de Python est choisie dans les reglages
+# de l'app sur le dashboard Streamlit ; elle vaut actuellement 3.14. Toute
+# resolution de ce fichier doit viser cette version-la, pas celle du poste dev.
+#
+# Pourquoi tout figer, transitives comprises : une seule dependance transitive
+# non contrainte suffit a casser un redeploiement si un editeur amont publie une
+# version incompatible. C'est verbeux, mais c'est le seul moyen d'obtenir une
+# installation reproductible. Compromis assume.
+#
+# Pourquoi uniquement des roues (--only-binary) : aucune dep ici ne doit se
+# compiler depuis les sources sur le Cloud (pas de compilateur ni de GDAL dans
+# l'image). C'est ce qui avait casse l'app quand fiona, sans roue cp314, tentait
+# de se batir et reclamait gdal-config. fiona a donc ete RETIRE : la lecture des
+# KML passe desormais par pyogrio (moteur par defaut de geopandas 1.x), qui a des
+# roues pour toutes les versions de Python et expose nativement KML/LIBKML.
+#
+# Les 10 dependances DIRECTES reellement importees par le code :
+#   streamlit geopandas shapely pyproj rasterio contextily
+#   matplotlib numpy pandas Pillow
+# La lecture des .kml repose sur pyogrio (tire par geopandas). Les autres lignes
+# sont transitives (tirees automatiquement).
+#
+# numpy 2.x / pandas 3.x sont epingles volontairement : c'est le jeu que le
+# Cloud installe et qui fonctionne. Ne pas les relever a l'aveugle.
+# =============================================================================
+
+affine==3.0.1
+altair==6.2.2
+anyio==4.15.0
+attrs==26.1.0
+certifi==2026.7.22
+charset-normalizer==3.5.1
+click==8.5.0
+cloudpickle==3.1.2
+contextily==1.7.1
+contourpy==1.3.3
+cycler==0.12.1
+fonttools==4.64.0
+geographiclib==2.1
+geopandas==1.1.4
+geopy==2.5.0
+h11==0.16.0
+httptools==0.8.0
+idna==3.19
+itsdangerous==2.2.0
+Jinja2==3.1.6
+joblib==1.6.0
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+kiwisolver==1.5.1
+MarkupSafe==3.0.3
+matplotlib==3.11.1
+mercantile==1.2.1
+narwhals==2.25.0
+numpy==2.5.2
+packaging==26.3
+pandas==3.0.5
+pillow==12.3.0
+protobuf==7.36.1
+pyarrow==25.0.1
+pydeck==0.9.3
+pyogrio==0.13.0
+pyparsing==3.3.2
+pyproj==3.7.2
+python-dateutil==2.9.0.post0
+python-multipart==0.0.32
+rasterio==1.5.1
+referencing==0.37.0
+requests==2.34.2
+rpds-py==2026.6.3
+shapely==2.1.2
+six==1.17.0
+starlette==1.6.0
+streamlit==1.63.0
+toml==0.10.2
+typing_extensions==4.16.0
+tzdata==2026.3
+urllib3==2.7.0
+uvicorn==0.52.4
+watchdog==6.0.0
+websockets==16.1.1
+xyzservices==2026.3.0
+
+# -----------------------------------------------------------------------------
+# METTRE A JOUR CES VERSIONS (geste maitrise, jamais subi)
+#
+# Verifier d'abord la version de Python dans les reglages de l'app sur le
+# dashboard Streamlit (elle NE vient PAS de .python-version) et resoudre pour
+# CELLE-LA. Ci-dessous : cible 3.14, a adapter si le Cloud change.
+#
+# A faire sur une PLAGE CREUSE : chaque push sur master redeploie et coupe les
+# sessions en cours des chefs de projet.
+#
+# 1. Re-resoudre pour la cible Cloud. Deux methodes :
+#
+#    a) Ideal — sur une machine/VM Linux avec le meme Python que le Cloud :
+#         python3.14 -m venv .venv && . .venv/bin/activate
+#         pip install streamlit geopandas shapely pyproj rasterio \
+#                     contextily matplotlib numpy pandas Pillow
+#         pip freeze > requirements.txt
+#
+#    b) Depannage — depuis n'importe quelle machine (resolution croisee, sans
+#       installer le Python cible), en listant les 10 deps directes dans un
+#       fichier "directes.txt". WHEELS UNIQUEMENT (--only-binary) pour garantir
+#       qu'aucune dep ne se compilera sur le Cloud :
+#         python -m pip install --dry-run --ignore-installed --only-binary=:all: \
+#           --python-version 3.14 --implementation cp --abi cp314 \
+#           --platform manylinux_2_17_x86_64 --platform manylinux2014_x86_64 \
+#           --platform manylinux_2_28_x86_64 --report r.json -r directes.txt
+#       puis extraire name==version de r.json (champ "install"). Si la commande
+#       echoue, c'est qu'une dep n'a pas de roue pour ce Python : la regler
+#       AVANT de pousser (c'est le garde-fou qui manquait).
+#
+# 2. VERIFIER avant de pousser :
+#       python check_regression.py
+#       python test_extremaux.py
+#       python test_kml_panneaux.py
+#       python test_plu.py
+#    + une generation de carte reelle dans l'appli.
+#
+# 3. Committer, pousser, verifier le redeploiement sur le dashboard Streamlit
+#    (logs d'installation verts, aucune compilation source).
+#
+# Jeu resolu le 2026-09-03 (Python 3.14 / manylinux x86_64, wheels only).
+# -----------------------------------------------------------------------------
